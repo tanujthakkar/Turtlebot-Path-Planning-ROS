@@ -4,10 +4,6 @@
 ENPM661 Spring 2022: Planning for Autonomous Robots
 Project 2: Dijkstra
 
-Author(s):
-Tanuj Thakkar (tanuj@umd.edu)
-M. Engg Robotics
-University of Maryland, College Park
 """
 
 # Importing modules
@@ -46,6 +42,7 @@ class Map():
 
         self.occupancy_grid[self.occupancy_grid==0] = 255 # Free Space
         self.occupancy_grid[self.occupancy_grid==1] = 0 # Obstacles
+
 
         # cv2.imshow("", np.flip(np.uint8(self.occupancy_grid).transpose(), axis=0))
         # cv2.waitKey(0)
