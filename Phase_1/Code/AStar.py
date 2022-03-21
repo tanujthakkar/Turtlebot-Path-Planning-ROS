@@ -4,10 +4,6 @@
 ENPM661 Spring 2022: Planning for Autonomous Robots
 Project 3 - Phase 1: A*
 
-Author(s):
-Tanuj Thakkar (tanuj@umd.edu)
-M. Engg Robotics
-University of Maryland, College Park
 """
 
 # Importing Modules
@@ -90,8 +86,11 @@ class AStar:
 
     def __in_collision(self, pos: np.array, clearance: int) -> bool:
         X, Y = np.ogrid[max(0, int(pos[0]) - clearance):min(self.occupancy_grid.shape[0], int(pos[0]) + clearance), max(0, int(pos[1]) - clearance):min(self.occupancy_grid.shape[1], int(pos[1]) + clearance)]
-        if(pos[0] < 0 or pos[0] >= self.occupancy_grid.shape[0] or pos[1] < 0 or pos[1] >= self.occupancy_grid.shape[1]):
-            # print("Node out of bounds!")
+        # if(pos[0] < 0 or pos[0] >= self.occupancy_grid.shape[0] or pos[1] < 0 or pos[1] >= self.occupancy_grid.shape[1]):
+        #     # print("Node out of bounds!")
+        #     return True
+        if (pos[0] < 10) or (pos[0] > self.occupancy_grid.shape[0] - 10) or (pos[1] < 10) or (pos[1] > self.occupancy_grid.shape[1] - 10): # Boundary condition
+            print("Node out of bounds!")
             return True
         elif(not self.occupancy_grid[int(pos[0]),int(pos[1])]):
             # print("Node in collision!")
@@ -158,10 +157,10 @@ class AStar:
             cv2.circle(occupancy_grid, (self.start_state[0], self.occupancy_grid.shape[1] - self.start_state[1]), 2, (0, 255, 0), 2)
             cv2.circle(occupancy_grid, (self.goal_state[0], self.occupancy_grid.shape[1] - self.goal_state[1]), 2, (0, 0, 255), 2)
             self.video.write(np.uint8(occupancy_grid))
-            cv2.namedWindow("A*", cv2.WINDOW_NORMAL)
-            cv2.resizeWindow("A*", 800, 500)
-            cv2.imshow("A*", occupancy_grid)
-            cv2.waitKey(0)
+            # cv2.namedWindow("A*", cv2.WINDOW_NORMAL)
+            # cv2.resizeWindow("A*", 800, 500)
+            # cv2.imshow("A*", occupancy_grid)
+            # cv2.waitKey(0)
 
         tick = time.time()
         while(not pq.empty()):
@@ -182,11 +181,11 @@ class AStar:
                     parent_node = closed_list_[current_node.parent_index]
                     start = (int(parent_node.state[0]), (self.occupancy_grid.shape[1] - 1) - int(parent_node.state[1]))
                     end = (int(current_node.state[0]), (self.occupancy_grid.shape[1] - 1) - int(current_node.state[1]))
-                    cv2.line(occupancy_grid, start, end, (255,0,0), 2)
+                    cv2.line(occupancy_grid, start, end, (255,0,0), 1)
                     if(self.iterations%20 == 0):
                         self.video.write(np.uint8(occupancy_grid))
-                        cv2.imshow("A*", occupancy_grid)
-                        cv2.waitKey(3)
+                        # cv2.imshow("A*", occupancy_grid)
+                        # cv2.waitKey(3)
                 except Exception as e:
                     print(e)
                     pass
@@ -210,9 +209,9 @@ class AStar:
                 if(not self.__in_collision(new_state, self.clearance)):
                     new_node = Node(new_state, new_cost, new_index, current_node.index)
 
-                    # if(self.__is_visited(new_node)):
-                        # self.current_index -= 1
-                        # continue
+                    if(self.__is_visited(new_node)):
+                        self.current_index -= 1
+                        continue
 
                     if(new_state in self.closed_list):
                         self.current_index -= 1
@@ -260,13 +259,14 @@ class AStar:
         if(self.visualize):
             for step in range(len(self.path)-1):
                 self.occupancy_grid_ = cv2.line(self.occupancy_grid_, (self.path[step,0], self.occupancy_grid.shape[1] - self.path[step,1]), (self.path[step+1,0], self.occupancy_grid.shape[1] - self.path[step+1,1]), (0,0,255), 2)
-                cv2.imshow("A*", self.occupancy_grid_)
+                # cv2.imshow("A*", self.occupancy_grid_)
                 self.video.write(np.uint8(self.occupancy_grid_))
-                cv2.waitKey(1)
-            cv2.waitKey(0)
+                print("done")
+                # cv2.waitKey(1)
+            # cv2.waitKey(0)
 
-            cv2.destroyAllWindows()
-            self.video.release()
+            # cv2.destroyAllWindows()
+            # self.video.release()
 
         print("BACKTRACKING PATH COMPLETE!")
         print("A* Path Length: {}".format(self.search_cost))
@@ -288,8 +288,12 @@ def main():
     Parser.add_argument('--Visualize', action='store_true', help='Toggle search visualization')
 
     Args = Parser.parse_args()
-    start_state = tuple(map(int, Args.StartState.replace('[', ' ').replace(']', ' ').replace(',', ' ').split()))
-    goal_state = tuple(map(int, Args.GoalState.replace('[', ' ').replace(']', ' ').replace(',', ' ').split()))
+    start_state = list(map(int, Args.StartState.replace('[', ' ').replace(']', ' ').replace(',', ' ').split()))
+    start_state[2] = to_rad(start_state[2])
+    start_state = tuple(start_state)
+    goal_state = list(map(int, Args.GoalState.replace('[', ' ').replace(']', ' ').replace(',', ' ').split()))
+    goal_state[2] = to_rad(goal_state[2])
+    goal_state = tuple(goal_state)
     radius = Args.Radius
     clearance = Args.Clearance
     threshold = Args.Threshold
