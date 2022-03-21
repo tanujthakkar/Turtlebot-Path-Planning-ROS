@@ -104,13 +104,11 @@ class AStar:
     def __is_visited(self, state: tuple):
         x = int((round(state[0] * 2) / 2)/self.duplicate_threshold)
         y = int((round(state[1] * 2) / 2)/self.duplicate_threshold)
-        theta = to_deg(state[2])
-        if(theta < 0):
-            theta = theta + 360
+        theta = round(to_deg(state[2]))
+        if(theta < 0.0):
+            theta += 360
         theta = int(theta/30)
 
-        print(x, y, theta)
-        input('q')
         if(self.visited_map[x][y][theta] != np.inf):
             return True
         else:
@@ -160,8 +158,8 @@ class AStar:
             self.closed_list[current_node.state] = (current_node.index, current_node)
             del self.open_list[current_node.state]
 
-            print("Prev State: ", prev_node.state)
-            print("Current State: ", current_node.state)
+            # print("Prev State: ", prev_node.state)
+            # print("Current State: ", current_node.state)
 
             if(self.visualize):
                 start = (int(prev_node.state[0]), (self.occupancy_grid.shape[1] - 1) - int(prev_node.state[1]))
@@ -171,9 +169,9 @@ class AStar:
                 if(self.iterations%20 == 0):
                     self.video.write(np.uint8(occupancy_grid))
                     cv2.imshow("A*", occupancy_grid)
-                    cv2.waitKey(0)
+                    cv2.waitKey(3)
 
-            if(self.__euclidean_distance(current_node.state, self.goal_state) <= self.threshold):
+            if(self.__euclidean_distance(current_node.state[:2], self.goal_state[:2]) <= self.threshold):
                 print("GOAL REACHED!")
                 toc = time.time()
                 # print("Took %.03f seconds to search the path"%((toc-tick)))
@@ -202,7 +200,7 @@ class AStar:
 
                     if(new_state not in self.open_list):
                         self.open_list[new_state] = (new_node.index, new_node)
-                        pq.put((new_node.cost + self.__euclidean_distance(new_state, self.goal_state), new_node.state))
+                        pq.put((new_node.cost + self.__euclidean_distance(new_state[:2], self.goal_state[:2]), new_node.state))
                     else:
                         if(self.open_list[new_state][1].cost > new_node.cost):
                             self.open_list[new_state] = (new_node.index, new_node)
