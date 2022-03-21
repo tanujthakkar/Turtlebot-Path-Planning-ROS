@@ -17,6 +17,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import cv2
 
+sys.dont_write_bytecode = True
 
 class Map():
 
@@ -43,13 +44,7 @@ class Map():
         t2_ = t2.get_points_inside(self.xx, self.yy, 0)
         self.occupancy_grid += t2_
 
-        # self.occupancy_grid[:2] = 0
-        # self.occupancy_grid[:,:2] = 0
-        # self.occupancy_grid[-2:] = 0
-        # self.occupancy_grid[:,-2:] = 0
-
         self.occupancy_grid[self.occupancy_grid==0] = 255 # Free Space
-        # self.occupancy_grid[self.occupancy_grid==-1] = 0 # Borders
         self.occupancy_grid[self.occupancy_grid==1] = 0 # Obstacles
 
         # cv2.imshow("", np.flip(np.uint8(self.occupancy_grid).transpose(), axis=0))
