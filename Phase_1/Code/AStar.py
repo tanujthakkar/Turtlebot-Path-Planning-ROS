@@ -101,18 +101,32 @@ class AStar:
         else:
             return False
 
-    def __is_visited(self, state: tuple):
-        x = int((round(state[0] * 2) / 2)/self.duplicate_threshold)
-        y = int((round(state[1] * 2) / 2)/self.duplicate_threshold)
-        theta = round(to_deg(state[2]))
+    def __is_visited(self, node: None) -> bool:
+        x = int((round(node.state[0] * 2) / 2)/self.duplicate_threshold)
+        y = int((round(node.state[1] * 2) / 2)/self.duplicate_threshold)
+        theta = round(to_deg(node.state[2]))
         if(theta < 0.0):
             theta += 360
         theta = int(theta/30)
 
         if(self.visited_map[x][y][theta] != np.inf):
+            # if(self.visited_map[x][y][theta] > node.cost):
+            #     self.open_list[node.state] = (node.index, node)
+            #     self.open_list[new_state] = (new_node.index, new_node)
+            #     self.visited_map[x][y][theta] = node.cost
             return True
         else:
             return False
+
+    def __update_visited(self, node: Node) -> None:
+        x = int((round(node.state[0] * 2) / 2)/self.duplicate_threshold)
+        y = int((round(node.state[1] * 2) / 2)/self.duplicate_threshold)
+        theta = round(to_deg(node.state[2]))
+        if(theta < 0.0):
+            theta += 360
+        theta = int(theta/30)
+
+        self.visited_map[x][y][theta] = node.cost
 
     def __to_tuple(self, state: np.array) -> tuple:
         return tuple(state)
@@ -155,6 +169,7 @@ class AStar:
             self.iterations += 1
 
             current_node = self.open_list[pq.get()[1]][1]
+            self.__update_visited(current_node)
             self.closed_list[current_node.state] = (current_node.index, current_node)
             del self.open_list[current_node.state]
 
@@ -190,7 +205,7 @@ class AStar:
                 if(not self.__in_collision(new_state, self.clearance)):
                     new_node = Node(new_state, new_cost, new_index, current_node.index)
 
-                    if(self.__is_visited(new_state)):
+                    if(self.__is_visited(new_node)):
                         self.current_index -= 1
                         continue
 
