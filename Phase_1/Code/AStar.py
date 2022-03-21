@@ -21,16 +21,19 @@ from queue import PriorityQueue
 import matplotlib.pyplot as plt
 
 from Map import *
+from utils import *
+
+sys.dont_write_bytecode = True
 
 class Node():
     '''
-        Class to represent nodes in Breadth First Search
+        Class to represent nodes in graph search
 
         Attributes
         state: state of the node
+        cost: cost of the node
         index: index of the node
         parent_index: index of parent node
-        actions: Possible actions to generate child nodes
     '''
 
     def __init__(self, state: tuple, cost: float, index: int, parent_index: int) -> None:
@@ -41,7 +44,7 @@ class Node():
 
 class AStar:
 
-    def __init__(self, start_state: tuple, goal_state: tuple, occupancy_grid:  np.array, clearance: int = 0, threshold: float = 1.5, step_size: float = 1.0, visualize: bool = False) -> None:
+    def __init__(self, start_state: tuple, goal_state: tuple, occupancy_grid:  np.array, clearance: int = 0, threshold: float = 1.5, step_size: float = 1.0, steer_limit: float = 60.0, steer_step: float = 30.0, visualize: bool = False) -> None:
         self.valid = True
         self.start_state = start_state
         self.goal_state = goal_state
@@ -54,16 +57,23 @@ class AStar:
             print("INVALID GOAL STATE!")
             self.valid = False
             return
-        self.steering_set = np.linspace(-180, 180, (360//30)+1)
-        self.current_index = 0
+        self.clearance = clearance
+        self.threshold = threshold
+        self.step_size = step_size
+        self.steer_limit = to_rad(steer_limit)
+        self.steer_step = to_rad(steer_step)
+        self.duplicate_threshold = 0.5
 
+        self.current_index = 0
         self.start_node = Node(self.start_state, 0, self.current_index, None)
         self.goal_node = Node(self.goal_state, 0, -1, None)
+        self.steering_set = np.linspace(-self.steer_limit, self.steer_limit, int((self.steer_limit*2//self.steer_step)+1))
         self.open_list = dict()
         self.closed_list = dict()
+        visited_map_size = [float(self.occupancy_grid.shape[0])/self.duplicate_threshold, float(self.occupancy_grid.shape[1])/self.duplicate_threshold, 360.0/to_deg(self.steer_step)]
+        self.visited_map = np.array(np.ones(list(map(int, visited_map_size))) * np.inf)
         self.final_node = None
         self.path = None
-        self.clearance = clearance
         self.visualize = visualize
         self.iterations = 0
         self.nodes = 0
@@ -91,17 +101,33 @@ class AStar:
         else:
             return False
 
+    def __is_visited(self, state: tuple):
+        x = int((round(state[0] * 2) / 2)/self.duplicate_threshold)
+        y = int((round(state[1] * 2) / 2)/self.duplicate_threshold)
+        theta = to_deg(state[2])
+        if(theta < 0):
+            theta = theta + 360
+        theta = int(theta/30)
+
+        print(x, y, theta)
+        input('q')
+        if(self.visited_map[x][y][theta] != np.inf):
+            return True
+        else:
+            return False
+
     def __to_tuple(self, state: np.array) -> tuple:
         return tuple(state)
 
     def __euclidean_distance(self, p1: tuple, p2: tuple) -> float:
     	return (np.sqrt(sum((np.asarray(p1) - np.asarray(p2))**2)))
 
-    def __motion_model(self, state, steering_input):
-        x = state[0] + (self.step_size * cos(steering_input))
-        Y = state[1] + (self.step_size * sin(steering_input))
+    def __motion_model(self, state: tuple, steering_input: int) -> tuple:
+        x = state[0] + (self.step_size * np.cos(steering_input))
+        y = state[1] + (self.step_size * np.sin(steering_input))
+        theta = pi_2_pi(state[2] + steering_input)
 
-        return (x, y)
+        return (x, y, theta)
 
     def search(self) -> bool:
 
@@ -112,12 +138,16 @@ class AStar:
         pq.put((self.start_node.cost, self.start_node.state))
         self.open_list[self.start_node.state] = (self.start_node.index, self.start_node)
 
+        prev_node = self.start_node
+
         if(self.visualize):
             occupancy_grid = np.uint8(np.copy(self.occupancy_grid))
             occupancy_grid = cv2.cvtColor(np.flip(np.uint8(occupancy_grid).transpose(), axis=0), cv2.COLOR_GRAY2BGR)
-            occupancy_grid = cv2.circle(occupancy_grid, (self.start_state[0], self.occupancy_grid.shape[1] - self.start_state[1]), 2, (0, 255, 0), 2)
-            occupancy_grid = cv2.circle(occupancy_grid, (self.goal_state[0], self.occupancy_grid.shape[1] - self.goal_state[1]), 2, (0, 0, 255), 2)
+            cv2.circle(occupancy_grid, (self.start_state[0], self.occupancy_grid.shape[1] - self.start_state[1]), 2, (0, 255, 0), 2)
+            cv2.circle(occupancy_grid, (self.goal_state[0], self.occupancy_grid.shape[1] - self.goal_state[1]), 2, (0, 0, 255), 2)
             self.video.write(np.uint8(occupancy_grid))
+            cv2.namedWindow("A*", cv2.WINDOW_NORMAL)
+            cv2.resizeWindow("A*", 800, 500)
             cv2.imshow("A*", occupancy_grid)
             cv2.waitKey(0)
 
@@ -130,17 +160,20 @@ class AStar:
             self.closed_list[current_node.state] = (current_node.index, current_node)
             del self.open_list[current_node.state]
 
+            print("Prev State: ", prev_node.state)
+            print("Current State: ", current_node.state)
+
             if(self.visualize):
-                row = (self.occupancy_grid.shape[1] - 1) - int(current_node.state[1])
-                # if(row == 250):
-                    # row = 249
-                occupancy_grid[row, int(current_node.state[0])] = (242, 133, 65)
+                start = (int(prev_node.state[0]), (self.occupancy_grid.shape[1] - 1) - int(prev_node.state[1]))
+                end = (int(current_node.state[0]), (self.occupancy_grid.shape[1] - 1) - int(current_node.state[1]))
+                cv2.line(occupancy_grid, start, end, (255,0,0), 2)
+                # occupancy_grid[row, int(current_node.state[0])] = (242, 133, 65)
                 if(self.iterations%20 == 0):
                     self.video.write(np.uint8(occupancy_grid))
                     cv2.imshow("A*", occupancy_grid)
-                    cv2.waitKey(3)
+                    cv2.waitKey(0)
 
-            if(current_node.state == self.goal_node.state):
+            if(self.__euclidean_distance(current_node.state, self.goal_state) <= self.threshold):
                 print("GOAL REACHED!")
                 toc = time.time()
                 # print("Took %.03f seconds to search the path"%((toc-tick)))
@@ -150,18 +183,22 @@ class AStar:
                 self.search_cost = current_node.cost
                 return True
 
-            actions = self.actions
-            for action in range(len(actions)):
-                new_state = self.__to_tuple(current_node.state + actions[action][:2])
+            for steering in self.steering_set:
+                new_state = self.__motion_model(current_node.state, steering)
                 new_index = self.current_index + 1
-                new_cost = current_node.cost + actions[action][2]
                 self.current_index = new_index
+                new_cost = current_node.cost + self.step_size
+
                 if(not self.__in_collision(new_state, self.clearance)):
                     new_node = Node(new_state, new_cost, new_index, current_node.index)
 
-                    if(new_state in self.closed_list):
+                    if(self.__is_visited(new_state)):
                         self.current_index -= 1
                         continue
+
+                    # if(new_state in self.closed_list):
+                    #     self.current_index -= 1
+                    #     continue
 
                     if(new_state not in self.open_list):
                         self.open_list[new_state] = (new_node.index, new_node)
@@ -177,6 +214,8 @@ class AStar:
                     self.current_index -= 1
                     # print("NODE IN COLLISION!")
                     pass
+
+            prev_node = current_node
 
         plt.show()
         print("SOLUTION DOES NOT EXIST!")
@@ -226,7 +265,8 @@ def main():
     Parser.add_argument('--Clearance', type=int, default=5, help='Clearance to obstacles')
     Parser.add_argument('--Threshold', type=float, default=1.5, help='Threshold to goal')
     Parser.add_argument('--StepSize', type=float, default=1.0, help='Step size for the search')
-    Parser.add_argument('--SteerLimit', type=float, default=60.0 help='Steering limit in either right/left direction')
+    Parser.add_argument('--SteerLimit', type=float, default=60.0, help='Steering limit in either right/left direction')
+    Parser.add_argument('--SteerStep', type=float, default=30.0, help='Steering step')
     Parser.add_argument('--Random', action='store_true', help='Toggle randomized start and goal states')
     Parser.add_argument('--Visualize', action='store_true', help='Toggle search visualization')
 
@@ -237,13 +277,15 @@ def main():
     clearance = Args.Clearance
     threshold = Args.Threshold
     step_size = Args.StepSize
-    Random = Args.Random
+    steer_limit = Args.SteerLimit
+    steer_step = Args.SteerStep
+    random = Args.Random
     visualize = Args.Visualize
 
     m = Map(400,250)
     m.generate_map()
 
-    astar = AStar(start_state, goal_state, m.occupancy_grid, clearance + radius, threshold, step_size, visualize)
+    astar = AStar(start_state, goal_state, m.occupancy_grid, clearance + radius, threshold, step_size, steer_limit, steer_step, visualize)
     if(astar.valid):
         if(astar.search()):
             astar.backtrack_path()
