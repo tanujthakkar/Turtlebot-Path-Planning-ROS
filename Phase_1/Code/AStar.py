@@ -177,14 +177,19 @@ class AStar:
             # print("Current State: ", current_node.state)
 
             if(self.visualize):
-                start = (int(prev_node.state[0]), (self.occupancy_grid.shape[1] - 1) - int(prev_node.state[1]))
-                end = (int(current_node.state[0]), (self.occupancy_grid.shape[1] - 1) - int(current_node.state[1]))
-                cv2.line(occupancy_grid, start, end, (255,0,0), 2)
-                # occupancy_grid[row, int(current_node.state[0])] = (242, 133, 65)
-                if(self.iterations%20 == 0):
-                    self.video.write(np.uint8(occupancy_grid))
-                    cv2.imshow("A*", occupancy_grid)
-                    cv2.waitKey(3)
+                try:
+                    closed_list_ = dict(self.closed_list.values())
+                    parent_node = closed_list_[current_node.parent_index]
+                    start = (int(parent_node.state[0]), (self.occupancy_grid.shape[1] - 1) - int(parent_node.state[1]))
+                    end = (int(current_node.state[0]), (self.occupancy_grid.shape[1] - 1) - int(current_node.state[1]))
+                    cv2.line(occupancy_grid, start, end, (255,0,0), 2)
+                    if(self.iterations%20 == 0):
+                        self.video.write(np.uint8(occupancy_grid))
+                        cv2.imshow("A*", occupancy_grid)
+                        cv2.waitKey(3)
+                except Exception as e:
+                    print(e)
+                    pass
 
             if(self.__euclidean_distance(current_node.state[:2], self.goal_state[:2]) <= self.threshold):
                 print("GOAL REACHED!")
@@ -205,13 +210,13 @@ class AStar:
                 if(not self.__in_collision(new_state, self.clearance)):
                     new_node = Node(new_state, new_cost, new_index, current_node.index)
 
-                    if(self.__is_visited(new_node)):
+                    # if(self.__is_visited(new_node)):
+                        # self.current_index -= 1
+                        # continue
+
+                    if(new_state in self.closed_list):
                         self.current_index -= 1
                         continue
-
-                    # if(new_state in self.closed_list):
-                    #     self.current_index -= 1
-                    #     continue
 
                     if(new_state not in self.open_list):
                         self.open_list[new_state] = (new_node.index, new_node)
@@ -230,7 +235,6 @@ class AStar:
 
             prev_node = current_node
 
-        plt.show()
         print("SOLUTION DOES NOT EXIST!")
         return False
 
