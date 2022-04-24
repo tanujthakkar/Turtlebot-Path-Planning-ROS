@@ -15,8 +15,8 @@ import sys
 import os
 import numpy as np
 import math
-from geometry_msgs.msg import Quaternion
-from tf.transformations import euler_from_quaternion
+from geometry_msgs.msg import Point, Quaternion
+from tf.transformations import euler_from_quaternion, quaternion_from_euler
 
 def pi_2_pi(theta):
 
@@ -36,4 +36,16 @@ def to_rad(theta):
 
 def get_yaw(Quaternion):
     roll, pitch, yaw = euler_from_quaternion([Quaternion.x, Quaternion.y, Quaternion.z, Quaternion.w])
+    print(roll, pitch, yaw)
     return yaw
+
+def get_pose(state):
+    position = Point()
+    position.x = state[0]
+    position.y = state[1]
+    position.z = 0
+
+    quat = Quaternion()
+    quat = quaternion_from_euler(0, 0, state[2])
+
+    return position, quat
