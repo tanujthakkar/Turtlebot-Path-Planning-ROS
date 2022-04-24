@@ -24,7 +24,7 @@ from astar import *
 def main():
 	rospy.init_node('astar_turtlebot', anonymous=True)
 
-	astr = AStar()
+	astr = AStar(20, 40, 1.0, 1.5, 0.5, 30.0)
 	rospy.spin()
 
 if __name__ == '__main__':
