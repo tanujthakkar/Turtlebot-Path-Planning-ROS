@@ -1,3 +1,8 @@
+# ENPM661 Project 3
+
+Tanuj Thakkar (UID - 117817539)
+Naitri Rajyaguru (UID - 117361919)
+
 # Turtlebot-Path-Planning-ROS  Phase 1
 ## Run Instructions
 
@@ -31,3 +36,5 @@ source devel/setup.bash
 
 roslaunch astar_turtlebot astar_turtlebot.launch x_init:=5 y_init:=2 theta_init:=0 x_final:=9 y_final:=7 rpm1:=5 rpm2:=10
 ```
+
+![astar_gazebo](https://user-images.githubusercontent.com/32800090/165027889-b0ecd269-0873-4350-a7cf-673409c363c5.gif)
