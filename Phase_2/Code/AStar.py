@@ -1,65 +1,35 @@
-#!/usr/env/bin python3
 
-"""
-ENPM661 Spring 2022: Planning for Autonomous Robots
-Project 3 - Phase 1: A*
-
-"""
-
-# Importing Modules
-import sys
-import os
+try:
+   import queue 
+except ImportError:
+   import Queue as queue
 import numpy as np
-import argparse
-import time
-import math
-from queue import PriorityQueue
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-from Map import *
+import argparse, time, csv, math
 from utils import *
+from MapGenerator import Map
 
-sys.dont_write_bytecode = True
+class Node:
 
-class Node():
-    '''
-        Class to represent nodes in graph search
-
-        Attributes
-        state: state of the node
-        cost: cost of the node
-        index: index of the node
-        parent_index: index of parent node
-    '''
-
-    def __init__(self, state: tuple, cost: float, index: int, parent_index: int) -> None:
+    def __init__(self, state, parent, move, cost, path_array): 
         self.state = state
+        self.parent = parent
+        self.move = move
         self.cost = cost
-        self.index = index
-        self.parent_index = parent_index
+        self.path_Array = path_array
 
-class AStar:
-    # start_state, goal_state, m.occupancy_grid, clearance + radius, threshold, step_size, steer_limit, steer_step, visualize
 
-    def __init__(self, start_state, goal_state, clearance, threshold, step_size, theta_step, RPM1, RPM2 , visualize,m,ax) -> None:
-        self.valid = True
-        self.start_state = start_state
-        self.goal_state = goal_state
-   
-     
-        self.clearance = clearance
-        self.threshold = threshold
-        self.step_size = step_size
-        self.theta_step = to_rad(theta_step)
-        self.duplicate_threshold = 0.5
+class Astar(Map):
 
-        self.current_index = 0
-        self.start_node = Node(self.start_state, 0, self.current_index, None)
-        self.goal_node = Node(self.goal_state, 0, -1, None)
-        # self.steering_set = np.linspace(-self.steer_limit, self.steer_limit, int((self.steer_limit*2//self.steer_step)+1))
-        self.RPM1 = RPM1
-        self.RPM2 = RPM2
+    def __init__(self,  start_state, goal_state, clearance, rpm1, rpm2, save_path):
+        self.radius, self.wheelDistance, self.dt = 0.038, 0.354, 0.1 
+        Map.__init__(self, clearance)
+        self.save_path = foldercheck(save_path)
 
+        self.start, self.goal = start_state, goal_state
+        self.RPM1 = rpm1
+        self.RPM2 = rpm2
         self.actions = np.array([[0, self.RPM1],
                                  [self.RPM1, 0],
                                  [self.RPM1, self.RPM1],
@@ -68,225 +38,185 @@ class AStar:
                                  [self.RPM2, self.RPM2],
                                  [self.RPM1, self.RPM2],
                                  [self.RPM2, self.RPM1]])
-        self.radius= 0.033
-        self.wheeldistance= 0.160
-        self.dt = 0.1
-        self.open_list = dict()
-        self.closed_list = dict()
-        # visited_map_size = [float(100)/self.duplicate_threshold, float(100)/self.duplicate_threshold, 360.0/to_deg(self.theta_step)]
-        self.visited_map = np.ones((10 * 2, 10 * 2, 360 // 30), np.int32) * math.inf
-        self.final_node = None
-        self.path = None
-        self.visualize = visualize
-        self.iterations = 0
-        self.nodes = 0
-        self.search_cost = 0.0
-        self.occupancy_grid_ = None
-        self.map_class = m
-        self.ax = ax
 
-        if self.map_class.check_collision(self.start_node.state[0],self.start_node.state[1]):
-            print("invalid start")
-        # if(self.visualize):
-            # self.video = cv2.VideoWriter('video.avi', cv2.VideoWriter_fourcc('F','M','P','4'), 24, (self.occupancy_grid.shape[0], self.occupancy_grid.shape[1]))
+        self.visualize = False
+        self.ax= None
+        self.i=0
+        self.final_moves, self.waypoints, self.final_points = [], [], []
 
-        print("\nInitialized A*...\n")
-        print("Initial State: \n", self.start_node.state)
-        print("Goal State: \n", self.goal_node.state)
+    def reset(self):
+        self.visualize=False
+        self.ax= None
+        self.i=0
+        self.final_moves, self.waypoints, self.final_points = [], [], []
 
-
-    def __in_collision(self, pos, clearance, map_class) -> bool:
-        if map_class.check_collision(pos[0],pos[1]):
-            return True
-        else:
-            return False
-
-
-    def __update_visited(self, node: Node) -> None:
-        x = int((round(node.state[0] * 2) / 2)/self.duplicate_threshold)
-        y = int((round(node.state[1] * 2) / 2)/self.duplicate_threshold)
-        theta = round(to_deg(node.state[2]))
-        if(theta < 0.0):
-            theta += 360
-        theta = int(theta/30)
-
-        self.visited_map[x][y][theta] = node.cost
-
-    def __to_tuple(self, state: np.array) -> tuple:
-        return tuple(state)
-
-    def __euclidean_distance(self, p1: tuple, p2: tuple) -> float:
-    	return (np.sqrt(sum((np.asarray(p1) - np.asarray(p2))**2)))
-
-    def __motion_model(self, state: tuple, left: int,right: int) -> tuple:
-        r, L, dt = self.radius, self.wheeldistance, self.dt
-        u_l = left
-        u_r = right
-
-        x = state[0] + (0.5*self.radius*(u_l + u_r)*np.cos(state[2])*self.step_size)
-        y = state[1] + (0.5*self.radius*(u_l + u_r)*np.sin(state[2])*self.step_size)
-        theta = pi_2_pi(state[2] + ((self.radius/self.wheeldistance)*(u_l - u_r)*self.theta_step))
-
-        return (x, y, theta)
-
-    def search(self) -> bool:
-
-        print("\nStarting search...\n")
-
-        pq = PriorityQueue()
-
-        pq.put((self.start_node.cost, self.start_node.state))
-        self.open_list[self.start_node.state] = (self.start_node.index, self.start_node)
-
-        prev_node = self.start_node
-
-        if(self.visualize):
-            print("plotting start and end position")
-            self.ax.add_patch(patches.Circle( (self.start_state[0],self.start_state[1]), radius=0.09, linewidth=1, alpha=0.5, edgecolor='r', facecolor='r'))
-            self.ax.add_patch(patches.Circle( (self.goal_state[0],self.goal_state[1]), radius=0.09, linewidth=1, alpha=0.5, edgecolor='g', facecolor='g'))
+    def search(self):
+        path = []
+    
+        print("Computing path")
+        init_node = Node(self.start, None, None, 0, None)
+        heap =  queue.PriorityQueue()
+        heap.put((init_node.cost, init_node))
+        threshold = 0.5
+        if self.visualize:         
+            self.ax.add_patch(patches.Circle( (self.start[0],self.start[1]), radius=0.1, linewidth=1, alpha=0.5, edgecolor='r', facecolor='r'))
+            self.ax.add_patch(patches.Circle( (self.goal[0],self.goal[1]), radius=0.1, linewidth=1, alpha=0.5, edgecolor='g', facecolor='g'))
+            plt.savefig(self.save_path+"/"+str(self.i)+".png")
             
+            self.i+=1
 
-        tick = time.time()
-        while(not pq.empty()):
-
-            self.iterations += 1
-
-            current_node = self.open_list[pq.get()[1]][1]
-            self.__update_visited(current_node)
-            self.closed_list[current_node.state] = (current_node.index, current_node)
-            del self.open_list[current_node.state]
-
-          
-            if(self.visualize):
-                try:
-                    closed_list_ = dict(self.closed_list.values())
-                    parent_node = closed_list_[current_node.parent_index]
-
-                    start = (int(parent_node.state[0]), int(parent_node.state[1]))
-                    end = (int(current_node.state[0]), int(current_node.state[1]))
-                    self.ax.plot([start[0], end[0]], [start[1], end[1]], color='r', linewidth = 2)
+        visibility_map = np.array([[[np.inf for k in range(360)] for j in range(int(self.height/threshold))] for _ in range(int(self.width/threshold))])
+        while (not heap.empty()):
+            currentNode = heap.get()[1]
             
-                except Exception as e:
-                    print(e)
-                    pass
-
-            if(self.__euclidean_distance(current_node.state[:2], self.goal_state[:2]) <= self.threshold):
-                print("GOAL REACHED!")
-                toc = time.time()
-                # print("Took %.03f seconds to search the path"%((toc-tick)))
-                self.final_node = current_node
-                
-                self.search_cost = current_node.cost
-                return True,self.ax
-
-            for action in self.actions:
-                new_state = self.__motion_model(current_node.state, action[0],action[1])
-                new_index = self.current_index + 1
-                self.current_index = new_index
-                new_cost = current_node.cost + self.step_size
-
-                if not (self.__in_collision(new_state, self.clearance,self.map_class)):
-                    new_node = Node(new_state, new_cost, new_index, current_node.index)
-
-
-                    if(new_state in self.closed_list):
-                        self.current_index -= 1
-                        continue
-
-                    if(new_state not in self.open_list):
-                        self.open_list[new_state] = (new_node.index, new_node)
-                        pq.put((new_node.cost + self.__euclidean_distance(new_state[:2], self.goal_state[:2]), new_node.state))
-                    else:
-                        if(self.open_list[new_state][1].cost > new_node.cost):
-                            self.open_list[new_state] = (new_node.index, new_node)
-                        else:
-                            self.current_index -= 1
-
-                    self.nodes += 1
-                else:
-                    self.current_index -= 1
-                    # print("NODE IN COLLISION!")
-                    pass
-          
-            prev_node = current_node
-
-        print("SOLUTION DOES NOT EXIST!")
-        return False,self.ax
-
-    def backtrack_path(self,ax) -> np.array:
-
-        current_node = self.final_node
-        self.path = list()
-        closed_list = dict(self.closed_list.values())
-
-        print("BACKTRACKING PATH...")
-
-        while(current_node.index != 0):
-            self.path.append(current_node.state)
-            current_node = closed_list[current_node.parent_index]
-
-        self.path.append(self.start_node.state)
-        self.path.reverse()
-        self.path = np.array(self.path).astype(int)
-
-      
+            if self.euclidean(currentNode.state, thresh_radius=0.2):
+                self.final_moves, node_path = self.backtrack(currentNode)                
+                self.get_points(node_path)
+                break
         
-        if(self.visualize):
-            for step in range(len(self.path)-1):
-                start = (self.path[step,0], self.path[step,1])
-                end = (self.path[step+1,0], self.path[step+1,1])
-                self.ax.plot([start[0], end[0]], [start[1], end[1]], color='g', linewidth = 2)
-           
-           
-        print("BACKTRACKING PATH COMPLETE!")
-        print("A* Path Length: {}".format(self.search_cost))
-        return self.path,ax
+            for next_state in self.get_next_state(currentNode):            
+                
+                if self._isVisited(next_state, visibility_map,  threshold=0.5):
 
+                    new_state = next_state.state
+                    cost = self.compute_cost(new_state)
+                    
+                    nx = int(half_round(new_state[0])/threshold)
+                    ny = int(half_round(new_state[1])/threshold)
+                    visibility_map[nx, ny, new_state[2]] = next_state.cost + cost
+                    
+                    heap.put((next_state.cost + cost, next_state))
+
+        return self.final_moves, self.waypoints, self.final_points
+
+    
+    def compute_cost(self, node_state, h=1.5):
+        if node_state is None: return 0.0
+        return h*((node_state[0]-self.goal[0])**2 + (node_state[1]-self.goal[1])**2)**(0.5)
+
+    def _isVisited(self, node, visibility_map, threshold=0.5):
+        x, y, theta = node.state
+        x = int(half_round(x)/threshold)
+        y = int(half_round(y)/threshold)
+        total_cost = node.cost + self.compute_cost(node.state)
+        return (total_cost < visibility_map[x, y, theta])
+
+    def motion_model(self, state, action, T=1, path_mode=False):
+        t = 0
+        r, L, dt = self.radius, self.wheelDistance, self.dt
+        
+        Xn, Yn, theta_new = state
+        theta_new = deg2rad(theta_new)
+        
+        uL, uR = action
+        # Xn, Yn, theta_new = Xi, Yi, thetai
+        path_array = [[Xn, Yn]]
+        cost = 0.0
+
+        while t<T:
+            t = t + dt
+            Xo, Yo = Xn, Yn
+            dx = 0.5 * r * (uL + uR) * math.cos(theta_new) * dt
+            dy = 0.5 * r * (uL + uR) * math.sin(theta_new) * dt
+            Xn += dx
+            Yn += dy
+            theta_new += (r / L) * (uL - uR) * dt
+            cost += math.sqrt(math.pow(dx,2) + math.pow(dy,2))
+            path_array.append([Xn, Yn])
+
+            if(self.visualize):
+                if path_mode:
+                    self.ax.plot([Xo, Xn], [Yo, Yn], color='r', linewidth = 2)
+                else:
+                    self.ax.plot([Xo, Xn], [Yo, Yn], color='b', alpha=0.2)
+
+        if(self.visualize):
+            plt.savefig(self.save_path+"/"+str(self.i)+".png")
+            self.i+=1
+            time.sleep(0.05)
+
+        theta_new = int(rad2deg(theta_new))
+        return [Xn, Yn, theta_new] , path_array, cost
+
+    def get_next_state(self, node):
+        state = node.state
+        states = []
+        for action in self.actions:
+            new_state, path_array, step_cost = self.motion_model(state, action)
+            x,y, _ = new_state
+            if not (self.check_collision(x,y)):    
+        
+                new_node = Node(new_state, node, action, node.cost + step_cost, path_array)
+                states.append(new_node)
+
+        return states
+
+    def get_points(self, node_path):
+        for node in node_path:
+            xi, yi, thetai = node.state
+            self.waypoints.append([xi, yi, thetai])
+
+            points = node.path_Array
+            if points is not None:
+                for point in points:
+                    xn, yn = point
+                    self.final_points.append([xn, yn])
+                    xi, yi = xn, yn
+    
+
+    def euclidean(self, current_state, thresh_radius):
+        return  np.square(current_state[0] - self.goal[0]) + np.square(current_state[1] - self.goal[1]) < thresh_radius**2
+
+    def get_map(self):
+        fig, self.ax = plt.subplots(figsize = (5, 5))
+        self.ax.set(xlim=(0, 10), ylim = (0,10))
+        self.ax = self.plot_all(self.ax) 
+        self.ax.set_aspect("equal")
+        
+    def backtrack(self,current_node):
+        moves, nodes = [], []
+
+        while(current_node.move is not None):
+            moves.append(current_node.move)
+            nodes.append(current_node)
+            current_node = current_node.parent
+        nodes.append(current_node)
+        
+        moves.reverse()
+        nodes.reverse()
+        return moves, nodes
+    
+    def visualize_astar(self):
+        self.get_map()
+        self.visualize = True
+        actions, waypoints, points  = self.search()
+    
+        assert len(waypoints) ==  len(actions)+1
+        for idx in range(len(waypoints)-1):
+            state = waypoints[idx]
+            action = actions[idx] 
+            self.motion_model(state, action, path_mode=True)
+        return True
 
 def main():
-
     Parser = argparse.ArgumentParser()
-    Parser.add_argument('--StartState', type=str, default="[15, 15, 0]", help='Start state of the robot')
-    Parser.add_argument('--GoalState', type=str, default="[50, 50, 0]", help='Goal state of the robot')
-    Parser.add_argument('--Radius', type=int, default=10, help='Radius of the robot')
-    Parser.add_argument('--Clearance', type=int, default=5, help='Clearance to obstacles')
-    Parser.add_argument('--Threshold', type=float, default=1.5, help='Threshold to goal')
-    Parser.add_argument('--StepSize', type=float, default=1.0, help='Step size for the search')
-    Parser.add_argument('--RPM1', type=float, default=25, help='Steering limit in either right/left direction')
-    Parser.add_argument('--RPM2', type=float, default=15, help='Steering step')
-    Parser.add_argument('--ThetaStep', type=float, default=30, help='Steering step')
-    Parser.add_argument('--Random', action='store_true', help='Toggle randomized start and goal states')
-    Parser.add_argument('--Visualize', action='store_true', help='Toggle search visualization')
+    Parser.add_argument('--start', default="1, 1, 30", help='Initial state of the turtlebot')
+    Parser.add_argument('--goal', default="1, 2, 0", help='Goal state of the turtlebot')
+    Parser.add_argument('--rpm', default="50, 100", help='Left and Right wheel RPMs')
+    Parser.add_argument('--clr', default="0.1", help='Clearance to obstacles')
+    Parser.add_argument('--save_path', default="../Results/", help='Path to save results')
 
     Args = Parser.parse_args()
-    start_state = list(map(int, Args.StartState.replace('[', ' ').replace(']', ' ').replace(',', ' ').split()))
-    start_state[2] = to_rad(start_state[2])
-    start_state = tuple(start_state)
-    goal_state = list(map(int, Args.GoalState.replace('[', ' ').replace(']', ' ').replace(',', ' ').split()))
-    goal_state[2] = to_rad(goal_state[2])
-    goal_state = tuple(goal_state)
-    radius = Args.Radius
-    clearance = Args.Clearance
-    threshold = Args.Threshold
-    step_size = Args.StepSize
-    RPM1 = Args.RPM1
-    RPM2 = Args.RPM2
-    theta_step = Args.ThetaStep
-    random = Args.Random
-    visualize = Args.Visualize
+    start_state = np.array([int(e) for e in Args.start.split(',')])
+    goal_state = np.array([int(e) for e in Args.goal.split(',')])
+    rpm1, rpm2 = np.array([int(e) for e in Args.rpm.split(',')])
+    clearance = float(Args.clr)
+    save_path = os.path.join(Args.save_path, Args.start_state)
+   
+    astar = Astar(start_state, goal_state, clearance,rpm1, rpm2, save_path)
 
-    fig, ax = plt.subplots()
-    ax.set(xlim=(0, 10), ylim = (0,10))
-    m = Map(10,10,0.1)
-    ax= m.generate_map(ax)
-    ax.set_aspect("equal")
-    
-    astar = AStar(start_state, goal_state, clearance, threshold, step_size, theta_step, RPM1, RPM2 , visualize,m,ax)
-    if(astar.valid):
-        val , ax = astar.search()
-        if(val):
-            path, ax =astar.backtrack_path(ax)
-            plt.show()
-if __name__ == '__main__':
+    if(astar.visualize_astar()):
+        generate_video(save_path, video_name= Args.start_state, fps=24)
+
+if __name__ == "__main__":
     main()
-
