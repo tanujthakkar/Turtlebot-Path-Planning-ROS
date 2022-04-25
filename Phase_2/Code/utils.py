@@ -1,36 +1,43 @@
-#!/usr/env/bin python3
-
-"""
-ENPM661 Spring 2022: Planning for Autonomous Robots
-Project 3 - Phase 1: A*
-
-Author(s):
-Tanuj Thakkar (tanuj@umd.edu)
-M. Engg Robotics
-University of Maryland, College Park
-"""
-
 # Importing Modules
-import sys
 import os
+import cv2
+import shutil
+from glob import glob
+import csv
 import numpy as np
-import math
-from queue import PriorityQueue
-import matplotlib.pyplot as plt
 
 
-def pi_2_pi(theta):
+def generate_video(path, video_name="simulation_video", fps = 10):
 
-        while(theta > np.pi):
-            theta -= 2.0 * np.pi
+    images = sorted(glob(path+"/*.png"))
+    frame = cv2.imread(os.path.join(images[0]))
+    height, width, channels = frame.shape
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    video = cv2.VideoWriter(os.path.join(path, video_name + ".mp4"), fourcc, fps , (width,height))
+    imgs = []
+    for i in range(len(images)):
+        image = cv2.imread(images[i])
+        if i==0:
+            h, w, _ = image.shape
+        video.write(image)
+    cv2.destroyAllWindows()
+    video.release()
 
-        while(theta < -np.pi):
-            theta += 2.0 * np.pi
+def deg2rad(rot): 
+    return 3.14*rot/180
+    
+def rad2deg(theta_new):
+    theta_new = 180*theta_new/3.14    
+    if (theta_new >= 360): theta_new -= 360
+    if (theta_new <= -360): theta_new += 360
+    return theta_new
 
-        return theta
+def foldercheck(path):
+    if not os.path.exists(path):
+        os.makedirs(path)
+    return path
 
-def to_deg(theta):
-    return (theta * 180 / np.pi)
-
-def to_rad(theta):
-    return (theta / 180 * np.pi)
+def half_round(x):
+    x = round(2*x)/2    
+    if x == 10 : x-=0.5
+    return x
