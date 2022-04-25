@@ -203,14 +203,14 @@ def main():
     Parser.add_argument('--start', default="1, 1, 30", help='Initial state of the turtlebot')
     Parser.add_argument('--goal', default="1, 2, 0", help='Goal state of the turtlebot')
     Parser.add_argument('--rpm', default="50, 100", help='Left and Right wheel RPMs')
-    Parser.add_argument('--clr', default="0.1", help='Clearance to obstacles')
+    Parser.add_argument('--clearance', default="0.1", help='Clearance to obstacles')
     Parser.add_argument('--save_path', default="../Results/", help='Path to save results')
 
     Args = Parser.parse_args()
     start_state = np.array([int(e) for e in Args.start.split(',')])
     goal_state = np.array([int(e) for e in Args.goal.split(',')])
     rpm1, rpm2 = np.array([int(e) for e in Args.rpm.split(',')])
-    clearance = float(Args.clr)
+    clearance = float(Args.clearance)
     save_path = os.path.join(Args.save_path, Args.start_state)
    
     astar = Astar(start_state, goal_state, clearance,rpm1, rpm2, save_path)
