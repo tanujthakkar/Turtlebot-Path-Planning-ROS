@@ -8,7 +8,6 @@ import csv
 import Queue
 
 from Obstacle import *
-from Map import *
 from MathUtils import *
 from Node import *
 
@@ -127,13 +126,6 @@ class AStar:
         final_path = list()
 
         obs = Obstacle(self.clearance)
-        m = Map(obs)
-
-        fig, ax = plt.subplots(figsize=(10,10))
-        ax.set(xlim=(0,10), ylim=(0,10))
-        ax = m.generate_map(ax)
-        ax.set_aspect("equal")
-
         goal_reached = False
         node_array = np.array([[[np.inf for k in range(threshold_angle)] for j in range(int(h/threshold))] for i in range(int(w/threshold))])
 
