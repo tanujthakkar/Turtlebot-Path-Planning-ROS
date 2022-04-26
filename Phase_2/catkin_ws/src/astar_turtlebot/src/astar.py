@@ -24,6 +24,7 @@ from Queue import PriorityQueue
 from std_msgs.msg import String
 from geometry_msgs.msg import Pose, PoseStamped, PoseWithCovarianceStamped, PoseArray
 from nav_msgs.msg import OccupancyGrid, Path
+from visualization_msgs.msg import Marker
 import jsk_recognition_msgs.msg
 
 sys.path.append('/usr/lib/python2.7/dist-packages')
@@ -44,8 +45,9 @@ class Node():
         parent_index: index of parent node
     '''
 
-    def __init__(self, state, cost, index, parent_index):
+    def __init__(self, state, path, cost, index, parent_index):
         self.state = state
+        self.path = path
         self.cost = cost
         self.index = index
         self.parent_index = parent_index
@@ -53,7 +55,7 @@ class Node():
 
 class AStar:
 
-    def __init__(self, RPM1, RPM2, clearance, threshold, step_size, theta_step):
+    def __init__(self, RPM1, RPM2, clearance, threshold, step_size, dt, theta_step):
         self.start_pose_pub = rospy.Publisher('start_pose', PoseStamped,  queue_size=10)
         self.goal_pose_pub = rospy.Publisher('goal_pose', PoseStamped,  queue_size=10)
         self.current_pose_pub = rospy.Publisher('current_pose', PoseStamped,  queue_size=10)
@@ -74,12 +76,13 @@ class AStar:
                                  [self.RPM2, self.RPM2],
                                  [self.RPM1, self.RPM2],
                                  [self.RPM2, self.RPM1]])
-        self.radius = 0.33
-        self.L = 1.60
+        self.radius = 0.038
+        self.L = 0.354
 
         self.clearance = clearance
         self.threshold = threshold
         self.step_size = step_size
+        self.dt = dt
         self.theta_step = to_rad(theta_step)
         self.duplicate_threshold = 0.5
 
@@ -91,7 +94,7 @@ class AStar:
                             truncate(start_pose.pose.pose.position.y, 3),
                             truncate(yaw, 3))
         print("Start State: ", self.start_state)
-        self.start_node = Node(self.start_state, 0, 0, None)
+        self.start_node = Node(self.start_state, [self.start_state], 0, 0, None)
         
         start_pose_msg = PoseStamped()
         start_pose_msg.header.stamp = rospy.Time.now()
@@ -109,7 +112,7 @@ class AStar:
                            truncate(yaw, 3))
         print("")
         print("Goal State: ", self.goal_state)
-        self.goal_node = Node(self.goal_state, 0, -1, None)
+        self.goal_node = Node(self.goal_state, [self.goal_state], 0, -1, None)
 
         self.goal_pose_pub.publish(goal_pose)
 
@@ -135,8 +138,8 @@ class AStar:
         # Y = np.int32(Y)
         # print(X, Y)
 
-        # print(pos)
-        # print(x, y)
+        # print("state: ", pos)
+        # print("loc: ", x, y)
         # print("collision: ", self.occupancy_grid[int(x),int(y)])
         # print("clearance: ", len(np.where(np.int32(self.occupancy_grid[X, Y] == 0)[0])))
         # print(np.where(np.int32(self.occupancy_grid[X, Y] == 0)[0]))
@@ -156,8 +159,8 @@ class AStar:
             return False
 
     def __is_visited(self, node):
-        x = node.state[1]//self.xy_resolution
-        y = node.state[0]//self.xy_resolution
+        x = node.state[0]//self.xy_resolution
+        y = node.state[1]//self.xy_resolution
         # x = int((round(node.state[0] * 2) / 2)/self.duplicate_threshold)
         # y = int((round(node.state[1] * 2) / 2)/self.duplicate_threshold)
 
@@ -166,7 +169,8 @@ class AStar:
             theta += 360
         theta = int(theta/30)
 
-        if(self.visited_map[x, y, theta] != np.inf):
+        # print("visited_map: ", x, y, theta)
+        if(self.visited_map[int(y)][int(x)][theta] != np.inf):
             # if(self.visited_map[x][y][theta] > node.cost):
             #     self.open_list[node.state] = (node.index, node)
             #     self.open_list[new_state] = (new_node.index, new_node)
@@ -176,8 +180,8 @@ class AStar:
             return False
 
     def __update_visited(self, node):
-        x = int(node.state[1]//self.xy_resolution)
-        y = int(node.state[0]//self.xy_resolution)
+        x = int(node.state[0]//self.xy_resolution)
+        y = int(node.state[1]//self.xy_resolution)
         # x = int((round(node.state[0] * 2) / 2)/self.duplicate_threshold)
         # y = int((round(node.state[1] * 2) / 2)/self.duplicate_threshold)
 
@@ -187,7 +191,7 @@ class AStar:
         theta = int(theta/30)
 
         print(x, y, theta)
-        self.visited_map[x][y][theta] = node.cost
+        self.visited_map[int(y)][int(x)][theta] = node.cost
 
     def __to_tuple(self, state):
         return tuple(state)
@@ -195,20 +199,34 @@ class AStar:
     def __euclidean_distance(self, p1, p2):
         return (np.sqrt(sum((np.asarray(p1) - np.asarray(p2))**2)))
 
-    def __motion_model(self, state, RPM1, RPM2):
-        # print("RPMs: ", (RPM1, RPM2))
-        u_l = ((2*np.pi*self.radius)*RPM1)/60
-        u_r = ((2*np.pi*self.radius)*RPM2)/60
-        # print("wheel vel: ", (u_l, u_r))
+    def __motion_model(self, state, RPM1, RPM2, parent_index, parent_cost):
+        u_l = RPM1
+        u_r = RPM2
+        # u_l = ((2*np.pi*self.radius)*RPM1)/60
+        # u_r = ((2*np.pi*self.radius)*RPM2)/60
+        
+        x = state[0]
+        y = state[1]
+        theta = state[2]
 
-        x = state[0] + (0.5*self.radius*(u_l + u_r)*np.cos(state[2])*self.step_size)
-        y = state[1] + (0.5*self.radius*(u_l + u_r)*np.sin(state[2])*self.step_size)
-        theta = pi_2_pi(state[2] + ((self.radius/self.L)*(u_l - u_r)*self.step_size))
+        path = list()
+        for t in range(int(self.step_size/self.dt)):
+            x = x + (0.5*self.radius*(u_l + u_r)*np.cos(state[2])*self.dt)
+            y = y + (0.5*self.radius*(u_l + u_r)*np.sin(state[2])*self.dt)
+            theta = pi_2_pi(theta + ((self.radius/self.L)*(u_l - u_r)*self.dt))
+            if(not self.__in_collision((x, y, theta), self.clearance)):
+                path.append((x, y, theta))
+            else:
+                return None, False
         # print((0.5*self.radius*(u_l + u_r)*np.cos(state[2])*self.step_size),
         #       (0.5*self.radius*(u_l + u_r)*np.sin(state[2])*self.step_size),
         #       ((self.radius/self.L)*(u_l - u_r)*self.step_size))
 
-        return (x, y, theta)
+        new_state = (x, y, theta)
+        new_cost = parent_cost + self.step_size
+        new_index = parent_index + 1
+        new_node = Node(new_state, path, new_cost, new_index, parent_index)
+        return new_node, True
 
     def search(self):
 
@@ -223,6 +241,22 @@ class AStar:
         self.nodes = 0
         self.search_cost = 0.0
         self.visualize = True
+
+        nodes = Marker()
+        nodes.header.stamp = rospy.Time.now()
+        nodes.header.frame_id = "map"
+        nodes.ns = "generated_nodes"
+        nodes.action = nodes.ADD
+        nodes.id = 0
+        nodes.type = nodes.LINE_LIST
+        nodes.scale.x = 0.02
+        nodes.color.r = 1.0
+        nodes.color.g = 0.26
+        nodes.color.b = 0.20
+        nodes.color.a = 1.0
+        # nodes.points.clear()
+
+        node = Point()
 
         pq = PriorityQueue()
 
@@ -243,6 +277,12 @@ class AStar:
             self.__update_visited(current_node)
             self.closed_list[current_node.state] = (current_node.index, current_node)
             del self.open_list[current_node.state]
+
+            node.x = current_node.state[0]
+            node.y = current_node.state[1]
+            node.z = 0
+            nodes.points.append(node)
+            # self.visited_poses_pub.publish(nodes)
 
             # print("Prev State: ", prev_node.state)
             # print("Current State: ", current_node.state)
@@ -274,23 +314,39 @@ class AStar:
                 return True
 
             for action in self.actions:
-                new_state = self.__motion_model(current_node.state, action[0], action[1])
-                new_index = self.current_index + 1
-                self.current_index = new_index
-                new_cost = current_node.cost + self.step_size
+                new_node, valid = self.__motion_model(current_node.state, action[0], action[1], current_node.index, current_node.cost)
 
-                if(not self.__in_collision(new_state, self.clearance)):
-                    new_node = Node(new_state, new_cost, new_index, current_node.index)
+                if(valid == True):
+                    new_state = new_node.state
+                    self.current_index = new_node.index
 
-                    # if(self.__is_visited(new_node)):
-                    #     # print("Visited")
+                    if(self.__is_visited(new_node)):
+                        # print("Visited")
+                        self.current_index -= 1
+                        continue
+                    # else:
+                        # print("Not visited")
+
+                    # if(new_state in self.closed_list):
+                    #     print("Visited")
                     #     self.current_index -= 1
                     #     continue
 
-                    if(new_state in self.closed_list):
-                        print("Visited")
-                        self.current_index -= 1
-                        continue
+                    if(self.visualize):
+                        visited_poses_msg.header.stamp = rospy.Time.now()
+                        visited_poses_msg.header.frame_id = "map"
+
+                        current_pose_msg = Pose()
+                        current_pose_msg.position.x = new_state[0]
+                        current_pose_msg.position.y = new_state[1]
+                        current_pose_msg.position.z = 0
+                        quat = quaternion_from_euler(0, 0, new_state[2])
+                        current_pose_msg.orientation.x = quat[0]
+                        current_pose_msg.orientation.y = quat[1]
+                        current_pose_msg.orientation.z = quat[2]
+                        current_pose_msg.orientation.w = quat[3]
+                        visited_poses_msg.poses.append(current_pose_msg)
+                        self.visited_poses_pub.publish(visited_poses_msg)
 
                     if(new_state not in self.open_list):
                         self.open_list[new_state] = (new_node.index, new_node)
@@ -320,8 +376,11 @@ class AStar:
 
         print("BACKTRACKING PATH...")
 
+        i = 0
         while(current_node.index != 0):
-            self.path.append(current_node.state)
+            for pose in current_node.path[::-1]:
+                self.path.append(pose)
+            i += 1
             current_node = closed_list[current_node.parent_index]
 
         self.path.append(self.start_node.state)
