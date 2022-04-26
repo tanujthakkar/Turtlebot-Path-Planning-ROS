@@ -34,18 +34,18 @@ def to_deg(theta):
 def to_rad(theta):
     return (theta / 180 * np.pi)
 
+def truncate(number, digits):
+    pow10 = 10 ** digits
+    return number * pow10 // 1 / pow10
+
 def get_yaw(Quaternion):
     roll, pitch, yaw = euler_from_quaternion([Quaternion.x, Quaternion.y, Quaternion.z, Quaternion.w])
-    print(roll, pitch, yaw)
     return yaw
 
 def get_pose(state):
-    position = Point()
-    position.x = state[0]
-    position.y = state[1]
-    position.z = 0
-
+    position = [state[0], state[1], 0]
     quat = Quaternion()
-    quat = quaternion_from_euler(0, 0, state[2])
+    quat = list(quaternion_from_euler(0, 0, state[2]))
+    print(quat)
 
     return position, quat
