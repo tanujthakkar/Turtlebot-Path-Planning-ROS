@@ -38,6 +38,13 @@ roslaunch astar_turtlebot astar_turtlebot.launch sx:=5 sy:=2 syaw:=0 rpm1:=5 rpm
 After RViz and Gazebo load up, pass the goal point in RViz map using the "2D Nav Goal" button.
 ```
 
+https://user-images.githubusercontent.com/32800090/165433340-bdb681e1-a613-46d0-9a99-f7fb61c0f17b.mp4
+
+
+
+
 Please reach out to me if you face any issues running the code.
+
 Tanuj Thakkar - tanuj@umd.edu
+
 Naitri Rajyaguru - nrajyagu@umd.edu
