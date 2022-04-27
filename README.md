@@ -33,7 +33,7 @@ cd catkin_ws
 catkin_make
 source devel/setup.bash
 
-roslaunch astar_turtlebot astar_turtlebot.launch sx:=5 sy:=2 syaw:=0 rpm1:=5 rpm2:=10 clearance:=5
+roslaunch astar_turtlebot astar_turtlebot.launch sx:=5 sy:=2 syaw:=0 rpm1:=10 rpm2:=15 clearance:=5
 
 After RViz and Gazebo load up, pass the goal point in RViz map using the "2D Nav Goal" button.
 ```
