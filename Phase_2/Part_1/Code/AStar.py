@@ -126,9 +126,9 @@ class Astar(Map):
 
             if(self.visualize):
                 if path_mode:
-                    self.ax.plot([Xo, Xn], [Yo, Yn], color='r', linewidth = 2)
+                    self.ax.plot([Xo, Xn], [Yo, Yn], color='g', linewidth = 2)
                 else:
-                    self.ax.plot([Xo, Xn], [Yo, Yn], color='b', alpha=0.2)
+                    self.ax.plot([Xo, Xn], [Yo, Yn], color='r', alpha=0.1)
 
         if(self.visualize):
             plt.savefig(self.save_path+"/"+str(self.i)+".png")
