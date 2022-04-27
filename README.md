@@ -22,8 +22,7 @@ python3.8 AStar.py --StartState [16,16,30] --GoalState [350,234,0] --StepSize 10
 python3.8 AStar.py --start "1,1,30" --goal "9,9,0" --rpm "50,100" --clearance 0.1 --save_path "../Results/"
 ```
 
-<img src="https://github.com/tanujthakkar/Turtlebot-Path-Planning-ROS/blob/master/Phase_2/Part_1/out.gif"/>
-
+<img src="https://github.com/tanujthakkar/Turtlebot-Path-Planning-ROS/blob/master/Phase_2/Part_1/Results/out.gif"/>
 
 # Turtlebot-Path-Planning-ROS  Phase 2 (Part 2)
 ## Run Instructions
@@ -31,10 +30,14 @@ python3.8 AStar.py --start "1,1,30" --goal "9,9,0" --rpm "50,100" --clearance 0.
 ```
 mkdir -p catkin_ws/src
 cd catkin_ws
-catkin build
+catkin_make
 source devel/setup.bash
 
-roslaunch astar_turtlebot astar_turtlebot.launch x_init:=5 y_init:=2 theta_init:=0 x_final:=9 y_final:=7 rpm1:=5 rpm2:=10
+roslaunch astar_turtlebot astar_turtlebot.launch sx:=5 sy:=2 syaw:=0 rpm1:=5 rpm2:=10 clearance:=5
+
+After RViz and Gazebo load up, pass the goal point in RViz map using the "2D Nav Goal" button.
 ```
 
-![astar_gazebo](https://user-images.githubusercontent.com/32800090/165027889-b0ecd269-0873-4350-a7cf-673409c363c5.gif)
+Please reach out to me if you face any issues running the code.
+Tanuj Thakkar - tanuj@umd.edu
+Naitri Rajyaguru - nrajyagu@umd.edu

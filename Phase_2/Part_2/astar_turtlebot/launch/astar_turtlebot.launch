@@ -1,35 +1,52 @@
 <launch>
-
   <arg name="model" default="burger" doc="model type [burger, waffle, waffle_pi]"/>
-  <arg name="x_init" default="5"/>
-  <arg name="y_init" default="3"/>
-  <arg name="z_init" default="0"/>
-  <arg name="theta_init" default="0"/>
-
-  <arg name="x_final" default="4"/>
-  <arg name="y_final" default="4"/>
-  
-  <arg name="clearance" default="0"/>
+  <arg name="sx" default="4"/> 
+  <arg name="sy" default="-4"/>
+  <arg name="sz" default="0"/>
+  <arg name="syaw" default="3.14"/>
+  <!-- <arg name="gx" default="4"/> -->
+  <!-- <arg name="gy" default="4"/> -->
   <arg name="rpm1" default="15"/>
   <arg name="rpm2" default="10"/>
+  <arg name="clearance" default="5"/>
+
+  <arg name="debug" default="false"/>
+  <arg name="gui" default="true"/>
+  <arg name="pause" default="false"/>
+  <arg name="world" value="$(find astar_turtlebot)/world/map.world"/>
 
   <include file="$(find gazebo_ros)/launch/empty_world.launch">
-    <arg name="world_name"  value="$(find astar_turtlebot)/worlds/map.world"/>
-    <arg name="paused" value="false"/>
+    <arg name="world_name" default="$(arg world)"/>
+    <arg name="debug" value="$(arg debug)"/>
+    <arg name="gui" value="$(arg gui)"/>
+    <arg name="paused" value="$(arg pause)"/>
     <arg name="use_sim_time" value="true"/>
-    <arg name="gui" value="true"/>
-    <arg name="headless" value="false"/>
-    <arg name="debug" value="false"/>
   </include>
-
-    <node 
-        pkg="astar_turtlebot"
-        name="astar_turtlebot_controller"
-        type="path_tracker.py"
-        output="screen"
-        args = "$(arg x_init) $(arg y_init) $(arg theta_init) $(arg x_final) $(arg y_final) $(arg clearance) $(arg rpm1) $(arg rpm2)"/>
 
   <param name="robot_description" command="$(find xacro)/xacro --inorder $(find turtlebot3_description)/urdf/turtlebot3_burger.urdf.xacro" />
 
-  <node pkg="gazebo_ros" type="spawn_model" name="spawn_urdf"  args="-urdf -model turtlebot3_burger -x $(arg x_init) -y $(arg y_init) -z $(arg z_init) -Y $(arg theta_init) -param robot_description" />
+  <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" respawn="false" output="screen"/>
+
+  <node pkg="gazebo_ros" type="spawn_model" name="spawn_urdf"  args="-urdf -model turtlebot3_burger -x $(arg sx) -y $(arg sy) -z $(arg sz) -Y $(arg syaw) -param robot_description" />
+
+    <node 
+        pkg="astar_turtlebot" 
+        name="astar_turtlebot" 
+        type="astar_turtlebot.py"
+        output="screen"
+        args="$(arg sx) $(arg sy) $(arg syaw) $(arg rpm1) $(arg rpm2) $(arg clearance)"/>
+
+  <!-- <node name="joint_state_publisher" pkg="joint_state_publisher" type="joint_state_publisher" /> -->
+
+  <!-- Fake Localization -->
+  <node pkg="fake_localization" type="fake_localization" name="fake_localization" />
+
+  <node pkg="tf2_ros" type="static_transform_publisher" name="map_odom" args="5.25 5.25 0 0 0 0 map odom"/>
+  <!-- <node pkg="tf2_ros" type="static_transform_publisher" name="very_inaccurate_odom" args="0 0 0 0 0 0 odom base_footprint"/> -->
+  
+  <node pkg="map_server" name="map_server" type="map_server" args="$(find astar_turtlebot)/map/map_tight.yaml"/>
+
+  <arg name="config" default="visualization" />
+  <node name="rviz" pkg="rviz" type="rviz" args="-d $(find astar_turtlebot)/rviz/$(arg config).rviz" />
+
 </launch>
