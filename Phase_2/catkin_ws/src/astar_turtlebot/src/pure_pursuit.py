@@ -52,7 +52,8 @@ class PurePursuit:
 
         idx = 0
         length = len(self.path.poses)
-        print("Path lenght: {}".format(length))
+
+        print("Tracking path...")
 
         while(True):
             try:
@@ -108,6 +109,6 @@ class PurePursuit:
             turtlebot_vel = Twist()
             turtlebot_vel.linear.x = self.max_vel
             turtlebot_vel.angular.z = delta
-            print("lin: {}, ang: {}".format(turtlebot_vel.linear.x, turtlebot_vel.angular.z))
+            # print("lin: {}, ang: {}".format(turtlebot_vel.linear.x, turtlebot_vel.angular.z))
 
             self.turtlebot_vel_pub.publish(turtlebot_vel)

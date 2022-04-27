@@ -13,7 +13,7 @@
 		<arg name="use_sim_time" value="true"/>
 	</include>
 
-	<node pkg="map_server" name="map_server" type="map_server" args="$(find astar_turtlebot)/map/map.yaml"/>
+	<node pkg="map_server" name="map_server" type="map_server" args="$(find astar_turtlebot)/map/map_tight.yaml"/>
 
 	<arg name="config" default="visualization" />
 	<node name="rviz" pkg="rviz" type="rviz" args="-d $(find astar_turtlebot)/rviz/$(arg config).rviz" />

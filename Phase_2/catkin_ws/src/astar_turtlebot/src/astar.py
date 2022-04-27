@@ -18,23 +18,28 @@ import numpy as np
 import argparse
 import time
 import math
-from Queue import PriorityQueue
+try:
+    from Queue import PriorityQueue
+except Exception:
+    from queue import PriorityQueue
 
 # Importing messages
 from std_msgs.msg import String
-from geometry_msgs.msg import Pose, PoseStamped, PoseWithCovarianceStamped, PoseArray
+from geometry_msgs.msg import Pose, PoseStamped, PoseWithCovarianceStamped, PoseArray, PointStamped
 from nav_msgs.msg import OccupancyGrid, Path
 from visualization_msgs.msg import Marker
-import jsk_recognition_msgs.msg
+import tf
+from tf import TransformListener
 
-sys.path.append('/usr/lib/python2.7/dist-packages')
-sys.path.append('/opt/ros/melodic/lib/python2.7/dist-packages/')
+# sys.path.append('/usr/lib/python2.7/dist-packages')
+# sys.path.append('/opt/ros/melodic/lib/python2.7/dist-packages/')
 from tf.transformations import euler_from_quaternion
 
 from utils import *
+from pure_pursuit import *
 
 
-class Node():
+class Node:
     '''
         Class to represent nodes in graph search
 
@@ -45,9 +50,10 @@ class Node():
         parent_index: index of parent node
     '''
 
-    def __init__(self, state, path, cost, index, parent_index):
+    def __init__(self, state, path, cmds, cost, index, parent_index):
         self.state = state
         self.path = path
+        self.cmds = cmds
         self.cost = cost
         self.index = index
         self.parent_index = parent_index
@@ -55,17 +61,15 @@ class Node():
 
 class AStar:
 
-    def __init__(self, RPM1, RPM2, clearance, threshold, step_size, dt, theta_step):
+    def __init__(self, start_state, RPM1, RPM2, clearance, threshold, step_size, dt, theta_step):
         self.start_pose_pub = rospy.Publisher('start_pose', PoseStamped,  queue_size=10)
-        self.goal_pose_pub = rospy.Publisher('goal_pose', PoseStamped,  queue_size=10)
+        self.goal_point_pub = rospy.Publisher('goal_point', PointStamped,  queue_size=10)
         self.current_pose_pub = rospy.Publisher('current_pose', PoseStamped,  queue_size=10)
         self.visited_poses_pub = rospy.Publisher('visited_poses', PoseArray,  queue_size=10)
         self.path_pub = rospy.Publisher('path', Path, queue_size=10)
 
-        rospy.Subscriber("initialpose", PoseWithCovarianceStamped, self.callback_start_pose)
-        rospy.Subscriber("move_base_simple/goal", PoseStamped, self.callback_goal_pose)
-        rospy.Subscriber("map", OccupancyGrid, self.callback_occupancy_grid)
-
+        self.start_state = start_state
+        # self.goal_state = goal_state
         self.RPM1 = RPM1
         self.RPM2 = RPM2
         self.actions = np.array([[0, self.RPM1],
@@ -76,8 +80,8 @@ class AStar:
                                  [self.RPM2, self.RPM2],
                                  [self.RPM1, self.RPM2],
                                  [self.RPM2, self.RPM1]])
-        self.radius = 0.038
-        self.L = 0.354
+        self.radius = 0.33 # [cm]
+        self.L = 1.60 # [cm]
 
         self.clearance = clearance
         self.threshold = threshold
@@ -85,16 +89,20 @@ class AStar:
         self.dt = dt
         self.theta_step = to_rad(theta_step)
         self.duplicate_threshold = 0.5
+        
+        rospy.Subscriber("initialpose", PoseWithCovarianceStamped, self.callback_start_pose)
+        rospy.Subscriber("move_base_simple/goal", PoseStamped, self.callback_goal_pose)
+        rospy.Subscriber("map", OccupancyGrid, self.callback_occupancy_grid)
 
     def callback_start_pose(self, start_pose):
         self.start_pose = start_pose
         yaw = get_yaw(start_pose.pose.pose.orientation)
 
-        self.start_state = (truncate(start_pose.pose.pose.position.x, 3),
-                            truncate(start_pose.pose.pose.position.y, 3),
-                            truncate(yaw, 3))
+        self.start_state = (start_pose.pose.pose.position.x,
+                            start_pose.pose.pose.position.y,
+                            yaw)
         print("Start State: ", self.start_state)
-        self.start_node = Node(self.start_state, [self.start_state], 0, 0, None)
+        self.start_node = Node(self.start_state, [self.start_state], None, 0, 0, None)
         
         start_pose_msg = PoseStamped()
         start_pose_msg.header.stamp = rospy.Time.now()
@@ -104,20 +112,44 @@ class AStar:
         self.start_pose_pub.publish(start_pose_msg)
 
     def callback_goal_pose(self, goal_pose):
+        print("")
+        print("Start State: ", self.start_state)
+        self.start_node = Node(self.start_state, [self.start_state], None, 0, 0, None)
+        
+        start_pose_msg = PoseStamped()
+        start_pose_msg.header.stamp = rospy.Time.now()
+        start_pose_msg.header.frame_id = "map"
+        start_pose_msg.pose.position.x = self.start_state[0]
+        start_pose_msg.pose.position.y = self.start_state[1]
+        start_pose_msg.pose.position.z = 0
+        quat = quaternion_from_euler(0, 0, self.start_state[2])
+        start_pose_msg.pose.orientation.x = quat[0]
+        start_pose_msg.pose.orientation.y = quat[1]
+        start_pose_msg.pose.orientation.z = quat[2]
+        start_pose_msg.pose.orientation.w = quat[3]
+        self.start_pose_pub.publish(start_pose_msg)
+
         self.goal_pose = goal_pose
         yaw = get_yaw(goal_pose.pose.orientation)
 
-        self.goal_state = (truncate(goal_pose.pose.position.x, 3),
-                           truncate(goal_pose.pose.position.y, 3),
-                           truncate(yaw, 3))
+        self.goal_state = (goal_pose.pose.position.x,
+                           goal_pose.pose.position.y,
+                           0)
+        self.goal_node = Node(self.goal_state, [self.goal_state], None, 0, -1, None)
+
         print("")
         print("Goal State: ", self.goal_state)
-        self.goal_node = Node(self.goal_state, [self.goal_state], 0, -1, None)
-
-        self.goal_pose_pub.publish(goal_pose)
+        goal_point = PointStamped()
+        goal_point.header.stamp = rospy.Time.now()
+        goal_point.header.frame_id = "map"
+        goal_point.point.x = self.goal_state[0]
+        goal_point.point.y = self.goal_state[1]
+        self.goal_point_pub.publish(goal_point)
 
         if(self.search()):
-            self.backtrack_path()
+            path, cmds = self.backtrack_path()
+            pp = PurePursuit(path, self.goal_state)
+            pp.track_path()
 
     def callback_occupancy_grid(self, occupancy_grid):
         self.occupancy_grid = np.asarray(occupancy_grid.data, dtype=np.int8).reshape(occupancy_grid.info.height, occupancy_grid.info.width)
@@ -127,15 +159,18 @@ class AStar:
         # visited_map_size = [float(self.occupancy_grid.shape[0])/self.duplicate_threshold, float(self.occupancy_grid.shape[1])/self.duplicate_threshold, 360.0/to_deg(self.theta_step)]
         visited_map_size = [float(self.occupancy_grid.shape[0]), float(self.occupancy_grid.shape[1]), 360.0/to_deg(self.theta_step)]
         self.visited_map = np.array(np.ones(list(map(int, visited_map_size))) * np.inf)
-        print(self.visited_map.shape)
+        # print(self.visited_map.shape)
+
+        # if(self.start_state is not None and self.goal_state is not None):
+        #     self.simulate()
 
     def __in_collision(self, pos, clearance):
         x = pos[0]//self.xy_resolution
         y = pos[1]//self.xy_resolution
 
-        # X, Y = np.ogrid[max(0, int(x) - clearance):min(self.occupancy_grid.shape[0], int(x) + clearance), max(0, int(y) - clearance):min(self.occupancy_grid.shape[1], int(y) + clearance)]
-        # X = np.int32(X)
-        # Y = np.int32(Y)
+        X, Y = np.ogrid[max(0, int(x) - clearance):min(self.occupancy_grid.shape[0], int(x) + clearance), max(0, int(y) - clearance):min(self.occupancy_grid.shape[1], int(y) + clearance)]
+        X = np.int32(X)
+        Y = np.int32(Y)
         # print(X, Y)
 
         # print("state: ", pos)
@@ -150,10 +185,10 @@ class AStar:
         elif(self.occupancy_grid[int(y),int(x)] != 0):
             # print("Node in collision!")
             return True
-        # elif(len(np.where(np.int32(self.occupancy_grid[Y, X] != 0)[0]))):
+        elif(len(np.where(self.occupancy_grid[Y, X] != 0)[0])):
             # print(len(np.where(np.int32(self.occupancy_grid[Y, X] != 0)[0])))
             # print("CLEARANCE LIMIT! ")
-            # return True
+            return True
         else:
             # print("NO COLLISION!")
             return False
@@ -190,7 +225,7 @@ class AStar:
             theta += 360
         theta = int(theta/30)
 
-        print(x, y, theta)
+        # print(x, y, theta)
         self.visited_map[int(y)][int(x)][theta] = node.cost
 
     def __to_tuple(self, state):
@@ -204,16 +239,33 @@ class AStar:
         u_r = RPM2
         # u_l = ((2*np.pi*self.radius)*RPM1)/60
         # u_r = ((2*np.pi*self.radius)*RPM2)/60
+        multiplier = ((2*np.pi*self.radius)/60)
+        # multiplier = 1
         
         x = state[0]
         y = state[1]
         theta = state[2]
 
         path = list()
+        lin_vel = list()
+        ang_vel = list()
         for t in range(int(self.step_size/self.dt)):
-            x = x + (0.5*self.radius*(u_l + u_r)*np.cos(state[2])*self.dt)
-            y = y + (0.5*self.radius*(u_l + u_r)*np.sin(state[2])*self.dt)
-            theta = pi_2_pi(theta + ((self.radius/self.L)*(u_l - u_r)*self.dt))
+            theta_dt = ((self.radius/self.L)*(u_l - u_r))
+            theta = (theta + (theta_dt*self.dt))
+            ang_vel.append(theta_dt*multiplier)
+            # ang_vel.append((self.radius/2) * (u_l + u_r) * multiplier)
+
+            x_dt = (0.5*self.radius*(u_l + u_r)*np.cos(state[2]))
+            x = x + (x_dt*self.dt)
+            x_vel = (0.5*self.radius*(u_l + u_r)*np.cos(theta_dt*multiplier))
+
+            y_dt = (0.5*self.radius*(u_l + u_r)*np.sin(state[2]))
+            y = y + (y_dt*self.dt)
+            y_vel = (0.5*self.radius*(u_l + u_r)*np.sin(theta_dt*multiplier))
+           
+            lin_vel.append(np.sqrt((x_vel*multiplier)**2 + (y_vel*multiplier)**2))
+            # lin_vel.append((self.radius/self.L) * (u_l - u_r) * multiplier)
+
             if(not self.__in_collision((x, y, theta), self.clearance)):
                 path.append((x, y, theta))
             else:
@@ -225,7 +277,9 @@ class AStar:
         new_state = (x, y, theta)
         new_cost = parent_cost + self.step_size
         new_index = parent_index + 1
-        new_node = Node(new_state, path, new_cost, new_index, parent_index)
+        cmds = [lin_vel, ang_vel]
+
+        new_node = Node(new_state, path, cmds, new_cost, new_index, parent_index)
         return new_node, True
 
     def search(self):
@@ -242,22 +296,6 @@ class AStar:
         self.search_cost = 0.0
         self.visualize = True
 
-        nodes = Marker()
-        nodes.header.stamp = rospy.Time.now()
-        nodes.header.frame_id = "map"
-        nodes.ns = "generated_nodes"
-        nodes.action = nodes.ADD
-        nodes.id = 0
-        nodes.type = nodes.LINE_LIST
-        nodes.scale.x = 0.02
-        nodes.color.r = 1.0
-        nodes.color.g = 0.26
-        nodes.color.b = 0.20
-        nodes.color.a = 1.0
-        # nodes.points.clear()
-
-        node = Point()
-
         pq = PriorityQueue()
 
         pq.put((self.start_node.cost, self.start_node.state))
@@ -271,18 +309,11 @@ class AStar:
         while(not pq.empty()):
 
             self.iterations += 1
-            # print(self.iterations)
 
             current_node = self.open_list[pq.get()[1]][1]
             self.__update_visited(current_node)
             self.closed_list[current_node.state] = (current_node.index, current_node)
             del self.open_list[current_node.state]
-
-            node.x = current_node.state[0]
-            node.y = current_node.state[1]
-            node.z = 0
-            nodes.points.append(node)
-            # self.visited_poses_pub.publish(nodes)
 
             # print("Prev State: ", prev_node.state)
             # print("Current State: ", current_node.state)
@@ -372,15 +403,19 @@ class AStar:
 
         current_node = self.final_node
         self.path = list()
+        self.cmds = list()
         closed_list = dict(self.closed_list.values())
 
         print("BACKTRACKING PATH...")
 
-        i = 0
         while(current_node.index != 0):
-            for pose in current_node.path[::-1]:
-                self.path.append(pose)
-            i += 1
+            lin_vel = list()
+            ang_vel = list()
+            for i in range(len(current_node.path)-1, -1, -1):
+                self.path.append(current_node.path[i])
+                lin_vel.append(current_node.cmds[0][i])
+                ang_vel.append(current_node.cmds[1][i])
+            self.cmds.append([lin_vel, ang_vel])
             current_node = closed_list[current_node.parent_index]
 
         self.path.append(self.start_node.state)
@@ -412,4 +447,41 @@ class AStar:
         
         print("BACKTRACKING PATH COMPLETE!")
         print("A* Path Length: {}".format(self.search_cost))
-        return self.path
+        return path, self.cmds
+
+    def simulate(self):
+        print("Simulating A* for Turtlebot 3...")
+
+        print("")
+        print("Start State: ", self.start_state)
+        self.start_node = Node(self.start_state, [self.start_state], None, 0, 0, None)
+
+        start_pose_msg = PoseStamped()
+        start_pose_msg.header.stamp = rospy.Time.now()
+        start_pose_msg.header.frame_id = "map"
+        start_pose_msg.pose.position.x = self.start_state[0]
+        start_pose_msg.pose.position.y = self.start_state[1]
+        start_pose_msg.pose.position.z = 0
+        quat = quaternion_from_euler(0, 0, self.start_state[2])
+        start_pose_msg.pose.orientation.x = quat[0]
+        start_pose_msg.pose.orientation.y = quat[1]
+        start_pose_msg.pose.orientation.z = quat[2]
+        start_pose_msg.pose.orientation.w = quat[3]
+        self.start_pose_pub.publish(start_pose_msg)
+
+        print("")
+        print("Goal State: ", self.goal_state)
+        self.goal_node = Node(self.goal_state, [self.goal_state], None, 0, -1, None)
+
+        goal_point = PointStamped()
+        goal_point.header.stamp = rospy.Time.now()
+        goal_point.header.frame_id = "map"
+        goal_point.point.x = self.goal_state[0]
+        goal_point.point.y = self.goal_state[1]
+        self.goal_point_pub.publish(goal_point)
+
+        if(self.search()):
+            path, cmds = self.backtrack_path()
+            pp = PurePursuit(path, self.goal_state)
+            rospy.sleep(5)
+            pp.track_path()
